@@ -15,60 +15,139 @@
 
 #define MAX_BUF_SIZE 1000000 // == MB
 
-void sendfile(int sock_fd, int file_fd) {
-	char content[MAX_BUF_SIZE];
-	int num_bytes_read;
+int write_sock(int sock, char *buff, size_t count) {
+	int num_writ, curr_num_writ;
 	
-	while ((num_bytes_read = read(file_fd, &content, MAX_BUF_SIZE)) != 0) {
-		send(sock_fd, content, num_bytes_read, 0);
+	num_writ = 0;
+	printf("count = %d\n", (int)count);
+    while (num_writ < count) {
+    	printf("num_writ = %d\n", num_writ);
+        curr_num_writ = send(sock, &buff[num_writ], count - num_writ, 0);
+        printf("curr_num_writ = %d\n", curr_num_writ);
+        if (curr_num_writ >= 0) {
+            num_writ += curr_num_writ;
+        } 
+        else {
+        	perror(strerror(errno));
+            return -1;
+        }
+    }
+    
+    return 0;
+}
+
+int read_sock(int sock, char *buff, size_t count) {
+	int num_read, curr_num_read;
+	
+	num_read = 0;
+	
+    while (num_read < count) {
+        curr_num_read = recv(sock, &buff[num_read], count - num_read, 0);
+        if (curr_num_read > 0) {
+            num_read += curr_num_read;
+        } 
+        else {
+        	perror(strerror(errno));
+            return -1;
+        }
+    }
+    
+    return num_read;
+}
+
+int sendfile(int conn_sock, int file_fd) {
+    char content[MAX_BUF_SIZE];
+    int num_bytes_read;
+
+    while ((num_bytes_read = read(file_fd, (char *)&content, MAX_BUF_SIZE)) != 0) {
+    	if (num_bytes_read < 0) {
+    		perror(strerror(errno));
+    		return -1;
+    	}
+    	
+        if (write_sock(conn_sock, (char *)&content, num_bytes_read) < 0) {
+        	return -1;
+        }
+    }
+    
+    return 0;
+}
+
+void handle_connection(int conn_sock, int file_fd, uint32_t N) {
+	uint32_t num_printable;
+	
+	/* send N */
+	printf("sending N...\n");
+	if (write_sock(conn_sock, (char *)&N, sizeof(N)) < 0) {
+		return;
 	}
+	
+	/* send file */
+	printf("sending_file...\n");
+	if (sendfile(conn_sock, file_fd) < 0) {
+		return;
+	}
+	
+	/* receive number of printable bytes */
+	printf("receiving number of printable bytes...\n");
+	if (read_sock(conn_sock, (char *)&num_printable, sizeof(num_printable)) < 0) {
+		return;
+	}
+	
+	printf("# of printable characters: %u\n", ntohl(num_printable));
 }
 
 int main(int argc, char *argv[]) {
-	int port, file_fd, sock_fd, con_sock_fd, file_size;
-	struct sockaddr_in serv_addr;
+	int port, file_fd, sock;
+	uint32_t N;
+	char *file_path, *ip;
+	struct sockaddr_in serv_addr = {0};
 	struct stat st;
-	char *recv_buf, *file_path, *ip;
-	
-	/* validate correct number of args */
-	if (argc != 4) {
-		printf("Incorrect number of arguments\n");
-		exit(1);
-	}
-	
+
 	/* handle arguments */
-	ip = argv[1]; // handle error
-	port = atoi(argv[2]);
-	file_path = argv[3];
-	file_fd = open(file_path, O_RDONLY); // handle error
+	/* validate correct number of args */
+    if (argc != 4) {
+        perror("Incorrect number of arguments\n");
+        exit(1);
+    }
+    
+    ip = argv[1];
+    port = atoi(argv[2]);
+    file_path = argv[3];
+    
+    /* make sure file can be opened */
+    file_fd = open(file_path, O_RDONLY);
+    if (file_fd < 0) {
+    	perror(strerror(errno));
+    	exit(1);
+    }
+    
+    
+    /* create a TCP connection */
+   	/* open a socket */
+	sock = socket(AF_INET, SOCK_STREAM, 0);
 	
-	/* create a TCP connection */
-	sock_fd = socket(AF_INET, SOCK_STREAM, 0); // handle error
-	
-	memset(&serv_addr, 0, sizeof(struct sockaddr)); // handle error
+	/* connect to server */
 	serv_addr.sin_family = AF_INET;
-	serv_addr.sin_port = htons(port);
-	serv_addr.sin_addr.s_addr = inet_addr(ip);
+    serv_addr.sin_port = htons(port);
+    serv_addr.sin_addr.s_addr = inet_addr(ip);
+    
+    if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+    	perror(strerror(errno));
+    	exit(1);
+    }
+    
+    
+    /* handle connection */
+    /* find N */
+	stat(file_path, &st);
+	N = (uint32_t)st.st_size;
 	
-	con_sock_fd = connect(sock_fd, (struct sockaddr*)&serv_addr, sizeof(struct sockaddr)); // handle error
-	printf("connected to server\n");
-	
-	/* send N */
-	stat(file_path, &st); // handle error
-	file_size = st.st_size;
-	send(con_sock_fd, (char *)&file_size, 4, 0); // handle error
-	printf("sent size of message\n");
-	
-	/* transfer the contents of the file to the server */
-	sendfile(file_fd, con_sock_fd); // handle error
-	printf("sent message\n");
-	
-	/* receive answer */
-	recv(con_sock_fd, &recv_buf, 4, 0); // handle error
-	printf("# of printable characters: %u\n", ntohl(*recv_buf));
-	
-	/* close up */
-	close(file_fd);
-	close(sock_fd);
-	close(con_sock_fd);
+    handle_connection(sock, file_fd, htonl(N));
+    
+    
+    /* close up */
+    close(file_fd);
+    close(sock);
+    
 }

@@ -1,3 +1,5 @@
+#define _DEFAULT_SOURCE
+
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
@@ -11,8 +13,12 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <endian.h>
+#include <stdint.h>
 
 #define MAX_BUF_SIZE 1000000 // == MB
+#define MIN_PRINT_CHAR 32
+#define MAX_PRINT_CHAR 126
 #define NUM_PRINT_CHARS 95
 
 
@@ -26,6 +32,9 @@ int write_sock(int sock, char *buff, size_t count) {
         if (curr_num_writ > 0) {
             num_writ += curr_num_writ;
         } 
+        else if (curr_num_writ == 0) {
+        	return num_writ;
+        }
         else {
         	perror(strerror(errno));
             return -1;
@@ -44,9 +53,12 @@ int read_sock(int sock, char *buff, size_t count) {
     	printf("num_read = %d\n", num_read);
         curr_num_read = recv(sock, &buff[num_read], count - num_read, 0);
         printf("curr_num_read = %d\n", curr_num_read);
-        if (curr_num_read >= 0) {
+        if (curr_num_read > 0) {
             num_read += curr_num_read;
         } 
+        else if (curr_num_read == 0) {
+        	return num_read;
+        }
         else {
         	perror(strerror(errno));
             return -1;
@@ -56,29 +68,28 @@ int read_sock(int sock, char *buff, size_t count) {
     return num_read;
 }
 
-int update_statistics(int sock, int *stats, int size) {
+int update_statistics(int sock, int *stats, uint64_t size_host) {
 	int new_stats[NUM_PRINT_CHARS] = {0};
     char buff[MAX_BUF_SIZE];
     int num_bytes_recv, i, ind, num_printable = 0;
 
-    while (size > 0) {
-        num_bytes_recv = read_sock(sock, (char *)&buff, MAX_BUF_SIZE);
-        if (num_bytes_recv < 0) {
-        	return -1;
-        }
-
-        /* update new statistics */
-        for (i = 0; i < num_bytes_recv; ++i) {
-            ind = buff[i];
-            if (ind >= 32 && ind <= 126) { /* is printable! */
-                ind -= 32;
-                new_stats[ind]++;
-                num_printable++;
-            }
-        }
-
-        size -= num_bytes_recv;
+    num_bytes_recv = read_sock(sock, (char *)&buff, size_host);
+    if (num_bytes_recv < 0) {
+    	return -1;
     }
+
+    /* update new statistics */
+    for (i = 0; i < num_bytes_recv; ++i) {
+        ind = buff[i];
+        if (ind >= MIN_PRINT_CHAR && ind <= MAX_PRINT_CHAR) { /* is printable! */
+            ind -= MIN_PRINT_CHAR;
+             new_stats[ind]++;
+           num_printable++;
+        }
+	}
+    
+
+	size_host -= num_bytes_recv;
 
     /* update statistics */
     for (i = 0; i < NUM_PRINT_CHARS; ++i) {
@@ -90,24 +101,26 @@ int update_statistics(int sock, int *stats, int size) {
 
 
 void handle_connection(int conn_sock, int *stats) {
-	uint32_t size, num_printable;
+	uint64_t size_net, size_host, num_printable_host, num_printable_net;
 	
 	/* receive size */
 	printf("receiving N...\n");
-	if (read_sock(conn_sock, (char *)&size, sizeof(size)) < 0) {
+	if (read_sock(conn_sock, (char *)&size_net, sizeof(size_net)) < 0) {
 		return;
 	}
+	size_host = be64toh(size_net);
 	
 	/* update statistics */
-	printf("updating statistics...");
-	num_printable = update_statistics(conn_sock, stats, size);
-	if (num_printable < 0) {
+	printf("updating statistics...\n");
+	num_printable_host = update_statistics(conn_sock, stats, size_host);
+	if (num_printable_host < 0) {
 		return;
 	}
+	num_printable_net = htobe64(num_printable_host);
 	
 	/* send number of printable chars */
 	printf("sending number of printable chars\n");
-	if (write_sock(conn_sock, (char *)&num_printable, sizeof(num_printable)) < 0) {
+	if (write_sock(conn_sock, (char *)&num_printable_net, sizeof(num_printable_net)) < 0) {
 		return;
 	}
 }

@@ -1,3 +1,5 @@
+#define _DEFAULT_SOURCE
+
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
@@ -11,6 +13,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <endian.h>
+
 
 
 #define MAX_BUF_SIZE 1000000 // == MB
@@ -27,6 +31,9 @@ int write_sock(int sock, char *buff, size_t count) {
         if (curr_num_writ >= 0) {
             num_writ += curr_num_writ;
         } 
+        else if (curr_num_writ == 0) {
+        	return num_writ;
+        }
         else {
         	perror(strerror(errno));
             return -1;
@@ -46,6 +53,9 @@ int read_sock(int sock, char *buff, size_t count) {
         if (curr_num_read > 0) {
             num_read += curr_num_read;
         } 
+        else if (curr_num_read == 0) {
+        	return num_read;
+        }
         else {
         	perror(strerror(errno));
             return -1;
@@ -73,12 +83,12 @@ int sendfile(int conn_sock, int file_fd) {
     return 0;
 }
 
-void handle_connection(int conn_sock, int file_fd, uint32_t N) {
-	uint32_t num_printable;
+void handle_connection(int conn_sock, int file_fd, uint64_t size_net) {
+	uint64_t num_printable_host, num_printable_net;
 	
 	/* send N */
 	printf("sending N...\n");
-	if (write_sock(conn_sock, (char *)&N, sizeof(N)) < 0) {
+	if (write_sock(conn_sock, (char *)&size_net, sizeof(size_net)) < 0) {
 		return;
 	}
 	
@@ -90,16 +100,17 @@ void handle_connection(int conn_sock, int file_fd, uint32_t N) {
 	
 	/* receive number of printable bytes */
 	printf("receiving number of printable bytes...\n");
-	if (read_sock(conn_sock, (char *)&num_printable, sizeof(num_printable)) < 0) {
+	if (read_sock(conn_sock, (char *)&num_printable_net, sizeof(num_printable_net)) < 0) {
 		return;
 	}
+	num_printable_host = be64toh(num_printable_net);
 	
-	printf("# of printable characters: %u\n", ntohl(num_printable));
+	printf("# of printable characters: %lu\n", num_printable_host);
 }
 
 int main(int argc, char *argv[]) {
 	int port, file_fd, sock;
-	uint32_t N;
+	uint64_t size_host, size_net;
 	char *file_path, *ip;
 	struct sockaddr_in serv_addr = {0};
 	struct stat st;
@@ -141,9 +152,10 @@ int main(int argc, char *argv[]) {
     /* handle connection */
     /* find N */
 	stat(file_path, &st);
-	N = (uint32_t)st.st_size;
+	size_host = (uint64_t)st.st_size;
+	size_net = htobe64(size_host);
 	
-    handle_connection(sock, file_fd, htonl(N));
+    handle_connection(sock, file_fd, size_net);
     
     
     /* close up */

@@ -1,5 +1,3 @@
-#define _DEFAULT_SOURCE
-
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
@@ -23,11 +21,8 @@ int write_sock(int sock, char *buff, size_t count) {
 	int num_writ, curr_num_writ;
 	
 	num_writ = 0;
-	printf("count = %d\n", (int)count);
     while (num_writ < count) {
-    	printf("num_writ = %d\n", num_writ);
         curr_num_writ = send(sock, &buff[num_writ], count - num_writ, 0);
-        printf("curr_num_writ = %d\n", curr_num_writ);
         if (curr_num_writ >= 0) {
             num_writ += curr_num_writ;
         } 
@@ -87,19 +82,16 @@ void handle_connection(int conn_sock, int file_fd, uint64_t size_net) {
 	uint64_t num_printable_host, num_printable_net;
 	
 	/* send N */
-	printf("sending N...\n");
 	if (write_sock(conn_sock, (char *)&size_net, sizeof(size_net)) < 0) {
 		return;
 	}
 	
 	/* send file */
-	printf("sending_file...\n");
 	if (sendfile(conn_sock, file_fd) < 0) {
 		return;
 	}
 	
 	/* receive number of printable bytes */
-	printf("receiving number of printable bytes...\n");
 	if (read_sock(conn_sock, (char *)&num_printable_net, sizeof(num_printable_net)) < 0) {
 		return;
 	}

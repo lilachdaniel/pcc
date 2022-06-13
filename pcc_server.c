@@ -1,5 +1,3 @@
-#define _DEFAULT_SOURCE
-
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
@@ -71,12 +69,8 @@ int read_sock(int sock, char *buff, size_t count) {
 	long num_read, curr_num_read;
 	
 	num_read = 0;
-	printf("count = %ld\n", count);
     while (num_read < count) {
-    	printf("num_read = %ld\n", num_read);
-    	printf("left to read = %ld\n", count - num_read);
         curr_num_read = recv(sock, &buff[num_read], count - num_read, 0);
-        printf("curr_num_read = %ld\n", curr_num_read);
         if (curr_num_read > 0) {
             num_read += curr_num_read;
         } 
@@ -88,7 +82,6 @@ int read_sock(int sock, char *buff, size_t count) {
             return -1;
         }
     }
-    printf("read_sock returned %lu\n", num_read);
     return num_read;
 }
 
@@ -98,7 +91,6 @@ int update_statistics(int sock, uint64_t size_host) {
     int curr_size_host, num_bytes_recv, i, ind, num_printable = 0;
 
 	while (size_host > 0) {
-		printf("size_host = %lu\n", size_host);
 		/* find size to pass to read_sock */
 		if (size_host > MAX_BUF_SIZE) {
 			curr_size_host = MAX_BUF_SIZE;
@@ -147,15 +139,12 @@ void handle_connection(int conn_sock) {
 	}
 	
 	/* receive size */
-	printf("receiving N...\n");
 	if (read_sock(conn_sock, (char *)&size_net, sizeof(size_net)) < 0) {
 		return;
 	}
 	size_host = be64toh(size_net);
-	printf("size host = %lu\n", size_host);
 	
 	/* update statistics */
-	printf("updating statistics...\n");
 	num_printable_host = update_statistics(conn_sock, size_host);
 	if (num_printable_host < 0) {
 		return;
@@ -163,7 +152,6 @@ void handle_connection(int conn_sock) {
 	num_printable_net = htobe64(num_printable_host);
 	
 	/* send number of printable chars */
-	printf("sending number of printable chars\n");
 	if (write_sock(conn_sock, (char *)&num_printable_net, sizeof(num_printable_net)) < 0) {
 		return;
 	}
@@ -210,7 +198,6 @@ int main(int argc, char *argv[]) {
     }
     
     /* listen on port */
-    printf("listening on port %d...\n", port);
     if (listen(lis_sock, 10) != 0) {
     	perror(strerror(errno));
     	exit(1);
@@ -226,7 +213,6 @@ int main(int argc, char *argv[]) {
 		}
 	
     	/* accept connection */
-    	printf("accepting connection...\n");
     	conn_sock = accept(lis_sock, NULL, NULL);
     	if (conn_sock < 0) {
     		perror(strerror(errno));

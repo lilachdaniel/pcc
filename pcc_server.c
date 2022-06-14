@@ -54,7 +54,8 @@ int write_sock(int sock, char *buff, size_t count) {
             num_writ += curr_num_writ;
         } 
         else if (curr_num_writ == 0) {
-        	return num_writ;
+        	perror(strerror(errno));
+            return -1;
         }
         else {
         	perror(strerror(errno));
@@ -75,9 +76,10 @@ int read_sock(int sock, char *buff, size_t count) {
             num_read += curr_num_read;
         } 
         else if (curr_num_read == 0) {
-        	return num_read;
+        	perror(strerror(errno));
+            return -1;
         }
-        else {
+        else if (errno == ETIMEDOUT || errno == ECONNRESET || errno == EPIPE) {
         	perror(strerror(errno));
             return -1;
         }
@@ -85,8 +87,15 @@ int read_sock(int sock, char *buff, size_t count) {
     return num_read;
 }
 
-int update_statistics(int sock, uint64_t size_host) {
-	uint64_t new_stats[NUM_PRINT_CHARS] = {0};
+void update_statistics(uint64_t *new_stats) {
+	int i;
+	perror("updating statistics\n");
+    for (i = 0; i < NUM_PRINT_CHARS; ++i) {
+        stats[i] += new_stats[i];
+    }
+}
+
+int process_new_info(int sock, uint64_t size_host, uint64_t *new_stats) {
     char buff[MAX_BUF_SIZE];
     int curr_size_host, num_bytes_recv, i, ind, num_printable = 0;
 
@@ -118,11 +127,6 @@ int update_statistics(int sock, uint64_t size_host) {
 		size_host -= num_bytes_recv;
 	}
 
-    /* update statistics */
-    for (i = 0; i < NUM_PRINT_CHARS; ++i) {
-        stats[i] += new_stats[i];
-    }
-
     return num_printable;
 }
 
@@ -144,8 +148,9 @@ void handle_connection(int conn_sock) {
 	}
 	size_host = be64toh(size_net);
 	
-	/* update statistics */
-	num_printable_host = update_statistics(conn_sock, size_host);
+	/* process new information */
+	uint64_t new_stats[NUM_PRINT_CHARS] = {0};
+	num_printable_host = process_new_info(conn_sock, size_host, (uint64_t *)&new_stats);
 	if (num_printable_host < 0) {
 		return;
 	}
@@ -155,11 +160,14 @@ void handle_connection(int conn_sock) {
 	if (write_sock(conn_sock, (char *)&num_printable_net, sizeof(num_printable_net)) < 0) {
 		return;
 	}
+	
+	/* update statistics */
+	update_statistics((uint64_t *)&new_stats);
 }
 
 
 int main(int argc, char *argv[]) {
-	int port, lis_sock, conn_sock;
+	int port, lis_sock, conn_sock, val;
 	struct sockaddr_in serv_addr = {0};
 	
 	/* handle SIGINT */
@@ -186,6 +194,13 @@ int main(int argc, char *argv[]) {
 	/* listen to incoming TCP connections */
 	/* open a socket */
 	lis_sock = socket(AF_INET, SOCK_STREAM, 0);
+	
+	/* set to reusable address */
+	val = 1;
+	if (setsockopt(lis_sock, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(int)) < 0) {
+		perror(strerror(errno));
+    	exit(1);
+    }
 	
 	/* bind the socket */
     serv_addr.sin_family = AF_INET;
@@ -218,6 +233,7 @@ int main(int argc, char *argv[]) {
     		perror(strerror(errno));
     		exit(1);
     	}
+    	perror("accepted connection\n");
     	
     	/* handle connection */
     	handle_connection(conn_sock);

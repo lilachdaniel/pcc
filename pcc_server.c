@@ -57,7 +57,7 @@ int write_sock(int sock, char *buff, size_t count) {
         	perror(strerror(errno));
             return -1;
         }
-        else {
+        else if (errno == ETIMEDOUT || errno == ECONNRESET || errno == EPIPE) {
         	perror(strerror(errno));
             return -1;
         }
@@ -89,7 +89,7 @@ int read_sock(int sock, char *buff, size_t count) {
 
 void update_statistics(uint64_t *new_stats) {
 	int i;
-	perror("updating statistics\n");
+	
     for (i = 0; i < NUM_PRINT_CHARS; ++i) {
         stats[i] += new_stats[i];
     }
@@ -233,7 +233,7 @@ int main(int argc, char *argv[]) {
     		perror(strerror(errno));
     		exit(1);
     	}
-    	perror("accepted connection\n");
+    	
     	
     	/* handle connection */
     	handle_connection(conn_sock);

@@ -118,32 +118,30 @@ def test_singal_handler():
     print("Testing signal handler - PASSED")
 
 def python_client_run(should_send_all_message = False):
-    try:
-        server = start_server()
-        _generate_folder_with_random_files(3)
-        printalbe_characters = run_client_on_folder()
+	try:
+		server = start_server()
+		_generate_folder_with_random_files(3)
+		printalbe_characters = run_client_on_folder()
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect(("127.0.0.1", SERVER_PORT))
-            message = b"Hello, world"
-            big_en_message_size = (len(message)).to_bytes(8, "big")
+		with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+			s.connect(("127.0.0.1", SERVER_PORT))
+			message = b"Hello, world"
+			big_en_message_size = (len(message)).to_bytes(8, "big")
+			print("sending message size...")
+			s.send(big_en_message_size)
+			print("sending message...")
+			if should_send_all_message:
+				s.send(message)
+				for b in message.decode("ascii"):
+					printalbe_characters[str(b)] += 1
 
-            s.send(big_en_message_size)
+			else:
+				s.send(message[:-2])
 
-            if should_send_all_message:
-                s.send(message)
-                #print("true")
-                for b in message.decode("ascii"):
-                    printalbe_characters[str(b)] += 1
+		parse_server_output(server, printalbe_characters)
 
-            else:
-                s.send(message[:-2])
-                #print("false")
-
-        parse_server_output(server, printalbe_characters)
-
-    finally:
-        server.kill()
+	finally:
+		server.kill()
 
 def test_client_fail():
     print("Starting testing client disconnect")
